@@ -1,0 +1,174 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+package DockerRun::CLI;
+
+use Getopt::Long;
+
+sub help {
+    my $self = shift;
+
+    my $help = <<'HELP';
+Usage:
+  docker-run IMAGE CONTAINER_NAME
+
+  # create /serivce/CONTANINER_NAME/{run,log/run}
+  docker-run --setup IMAGE CONTAINER_NAME
+
+HELP
+    ;
+    print $help;
+
+    exit 0;
+}
+
+sub setup {
+    my $self = shift;
+
+    my ($image,$cid) = @_;
+
+    my $run = <<'RUN';
+#!/bin/sh
+PATH=$PATH:/home/seesaa/savacan/bin/box
+export PATH
+exec env - PATH=$PATH  docker-run %s %s 2>&1
+
+RUN
+    ;
+    
+    my $run_log = <<'LOG';
+#!/bin/sh
+exec setuidgid logadmin multilog t ./main
+
+LOG
+    ;
+    my $dir     = sprintf "/serivce/.%s", $cid;
+    my $dir_log = sprintf "%s/log",$dir;
+    $run = sprintf $run, $image,$cid;
+
+    qx(mkdir -p $dir_log/main);
+    qx(echo '$run'    >  $dir/run);
+    qx(echo '$run_log' >  $dir/log/run);
+    qx(chmod +x $dir/{run,log/run});
+    qx(chown logadmin:logadmin $dir/log/main);
+    print sprintf "setup at: %s\n", $dir;
+    exit 0;
+}
+
+sub new {
+    my $class = shift;
+
+    # get options
+    my $opt = {};
+
+    my @specs = qw'docker-path=s docker-run-arg=s help setup';
+    my $p = Getopt::Long::Parser->new;
+    $p->configure(qw'pass_through');
+    if ($p->getoptions( \my %hash, @specs )) {
+        $opt = \%hash;
+    }
+
+    # default options
+    $opt->{'docker-path'}    ||= '/usr/bin/docker';
+    $opt->{'docker-run-arg'} ||= '--privileged=true -i --rm --net=host -v /var/seesaa:/var/seesaa:rw';
+
+    my $self =  bless {
+	_opt  => $opt,
+    }, $class;
+    
+    return $self;
+}
+
+sub opt { shift->{_opt} }
+
+sub run {
+    my $self  = shift;
+
+    if ($self->opt->{help}) {
+	$self->help();
+    }
+
+    my $image = shift || $self->help();
+    my $cid   = shift || $self->help();
+
+    if ($self->opt->{setup}) {
+	$self->setup($image,$cid);
+    }
+
+    my $docker = DockerRun::DockerCmd->new({
+	image     => $image,
+	cid       => $cid,
+	path      => $self->opt->{'docker-path'},
+	'run-arg' => $self->opt->{'docker-run-arg'},
+    });
+
+    local $| = 1;
+
+    local $SIG{INT} = sub {
+	$docker->stop;
+	die "INT\n";
+    };
+    
+    local $SIG{TERM} = sub {
+	$docker->stop;
+	die "TERM\n";
+    };
+    
+    local $SIG{HUP} = sub {
+	$docker->stop;
+	die "HUP\n";
+    };
+    
+    local $SIG{CONT} = sub {
+	#warn "CONT\n";
+    };
+    
+    local $SIG{ALRM} = sub {
+	#warn "ALRM\n";
+    };
+
+    $docker->run();
+}
+
+package DockerRun::DockerCmd;
+
+sub new {
+    my $class = shift;
+    my $opt   = shift;
+    return bless $opt, $class;
+}
+
+sub opt { shift->{opt} }
+
+sub run {
+    my $self = shift;
+
+    my $cmd  = sprintf "%s run --name=%s %s %s",(map {$self->{$_}} qw'path cid run-arg image');
+    warn $cmd;
+    qx($cmd) || die $!;
+}
+
+sub stop {
+    my $self = shift;
+    my $cmd  = sprintf "%s stop %s",(map {$self->{$_}} qw'path cid');
+    warn $cmd;
+    qx($cmd) || die $!;
+}
+
+sub restart {
+    # cannot work..
+    my $self = shift;
+    my $cmd  = sprintf "%s restart %s",(map {$self->{$_}} qw'path cid');
+    warn $cmd;
+    qx($cmd) || die $!;
+}
+
+package main;
+
+use strict;
+DockerRun::CLI->new->run(@ARGV);
+
+
+__END__
