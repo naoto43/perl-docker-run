@@ -44,7 +44,7 @@ exec setuidgid logadmin multilog t ./main
 
 LOG
     ;
-    my $dir     = sprintf "/serivce/.%s", $cid;
+    my $dir     = sprintf "/service/.docker-run-%s", $cid;
     my $dir_log = sprintf "%s/log",$dir;
     $run = sprintf $run, $image,$cid;
 
