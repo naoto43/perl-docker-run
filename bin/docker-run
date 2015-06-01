@@ -14,7 +14,7 @@ sub help {
 Usage:
   docker-run IMAGE CONTAINER_NAME
 
-  # create /serivce/CONTANINER_NAME/{run,log/run}
+  # create /service/CONTANINER_NAME/{run,log/run}
   docker-run --setup IMAGE CONTAINER_NAME
 
 HELP
@@ -31,8 +31,10 @@ sub setup {
 
     my $run = <<'RUN';
 #!/bin/sh
-PATH=$PATH
+PATH=$PATH:/home/seesaa/savacan/bin/box
 export PATH
+# docker pull %s
+docker rm -f %s
 exec env - PATH=$PATH  docker-run %s %s 2>&1
 
 RUN
@@ -44,9 +46,9 @@ exec setuidgid logadmin multilog t ./main
 
 LOG
     ;
-    my $dir     = sprintf "/service/.docker-run-%s", $cid;
+    my $dir     = sprintf "/service/.%s", $cid;
     my $dir_log = sprintf "%s/log",$dir;
-    $run = sprintf $run, $image,$cid;
+    $run = sprintf $run, $image,$cid,$image,$cid;
 
     qx(mkdir -p $dir_log/main);
     qx(echo '$run'    >  $dir/run);
